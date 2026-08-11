@@ -1,29 +1,39 @@
-# Build with repo root as context via apps/api/cloudbuild.yaml (gcloud builds submit
-# --tag has no -f/--dockerfile flag, so a Dockerfile outside the source root needs a
-# cloudbuild.yaml build step instead):
-#   gcloud builds submit --config=apps/api/cloudbuild.yaml --substitutions=_IMAGE=<image> .
+# Use Node.js runtime for production
+FROM node:20-slim
 
-FROM oven/bun:1.2.8 AS builder
+# Install required packages:
+# - wget for healthcheck, curl/bash for bun install, openssl for prisma
+# - fontconfig + fonts-dejavu-core so sharp/librsvg can render text in the
+#   browser-automation screenshot overlay (node:*-slim ships with zero fonts)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget curl openssl fontconfig fonts-dejavu-core \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Copy package.json and pre-installed node_modules from buildspec
+COPY package.json ./
+COPY node_modules ./node_modules
+
+# Copy built application and prisma files
 COPY . .
 
-RUN PRISMA_SKIP_POSTINSTALL_GENERATE=true bun install --ignore-scripts
-RUN if [ -f node_modules/bun/install.js ]; then node node_modules/bun/install.js; fi
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3333
 
-ENV NODE_OPTIONS=--max-old-space-size=3072
+# Create a non-root user for security
+RUN groupadd --system nestjs && useradd --system --gid nestjs nestjs \
+  && chown -R nestjs:nestjs /app
 
-RUN bunx turbo build --filter=@trycompai/api
+USER nestjs
 
-FROM node:22-alpine AS api
-
-WORKDIR /app
-
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
-
+# Expose the port the app runs on
 EXPOSE 3333
-CMD ["node", "apps/api/dist/main"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3333/v1/health || exit 1
+
+# Start the application
+CMD ["node", "src/main.js"]
