@@ -14,13 +14,14 @@ RUN if [ -f node_modules/bun/install.js ]; then node node_modules/bun/install.js
 
 ENV NODE_OPTIONS=--max-old-space-size=3072
 
-RUN cd apps/api && bun run db:getschema && bun run build:docker
+RUN bunx turbo build --filter=@trycompai/api
 
 FROM node:22-alpine AS api
 
 WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 
