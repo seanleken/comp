@@ -14,7 +14,7 @@ RUN if [ -f node_modules/bun/install.js ]; then node node_modules/bun/install.js
 
 ENV NODE_OPTIONS=--max-old-space-size=3072
 
-RUN cd apps/api && bun run build:docker
+RUN cd apps/api && bun run db:getschema && bun run build:docker
 
 FROM node:22-alpine AS api
 
